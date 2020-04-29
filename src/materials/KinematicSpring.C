@@ -1,5 +1,5 @@
 // MASTODON includes
-#include "IsotropicSpring.h"
+#include "KinematicSpring.h"
 
 // MOOSE includes
 #include "MooseMesh.h"
@@ -12,11 +12,12 @@
 #include "libmesh/quadrature.h"
 #include "libmesh/utility.h"
 
-registerMooseObject("MastodonApp", IsotropicSpring);
+registerMooseObject("MastodonApp", KinematicSpring);
+
 
 template <>
 InputParameters
-validParams<IsotropicSpring>()
+validParams<KinematicSpring>()
 {
   InputParameters params = validParams<Material>();
   params.addClassDescription(
@@ -41,17 +42,15 @@ validParams<IsotropicSpring>()
   params.addRequiredParam<RealVectorValue>("yield_force",
                                "Yield force after which plastic strain starts accumulating");
   params.addRequiredParam<RealVectorValue>("yield_moments",
-                                            "Yield moments after which plastic strain starts accumulating");
-  params.addRequiredParam<std::vector<Real>>("hardening_constant_force", "Hardening slope for forces");
-  params.addRequiredParam<std::vector<Real>>("hardening_constant_moment", "Hardening slope for moments");
-  params.addParam<Real>(
-       "absolute_tolerance", 1e-10, "Absolute convergence tolerance for Newton iteration");
-  params.addParam<Real>(
-       "relative_tolerance", 1e-8, "Relative convergence tolerance for Newton iteration");
-  return params;
+                              "Yield moments after which plastic strain starts accumulating");
+ params.addRequiredParam<RealVectorValue>("hardening_constant_force", "Hardening slope for forces");
+ params.addRequiredParam<RealVectorValue>("hardening_constant_moment", "Hardening slope for moments");
+ params.addParam<Real>(
+     "absolute_tolerance", 1e-8, "Absolute convergence tolerance for Newton iteration");
+ return params;
 }
 
-IsotropicSpring::IsotropicSpring(const InputParameters & parameters)
+KinematicSpring::KinematicSpring(const InputParameters & parameters)
   : Material(parameters),
     _nrot(coupledComponents("rotations")),
     _ndisp(coupledComponents("displacements")),
@@ -73,14 +72,12 @@ IsotropicSpring::IsotropicSpring(const InputParameters & parameters)
     _spring_moments_global_old(getMaterialPropertyOld<RealVectorValue>("global_moments")),
     _kdd(declareProperty<RankTwoTensor>("displacement_stiffness_matrix")),
     _krr(declareProperty<RankTwoTensor>("rotation_stiffness_matrix")),
-    _total_global_to_local_rotation(
-        declareProperty<RankTwoTensor>("total_global_to_local_rotation")),
+    _total_global_to_local_rotation(declareProperty<RankTwoTensor>("total_global_to_local_rotation")),
     _yield_force(getParam<RealVectorValue>("yield_force")),
     _yield_moments(getParam<RealVectorValue>("yield_moments")),
-    _hardening_constant_force(getParam<std::vector<Real>>("hardening_constant_force")),
-    _hardening_constant_moment(getParam<std::vector<Real>>("hardening_constant_moment")),
+    _hardening_constant_force(getParam<RealVectorValue>("hardening_constant_force")),
+    _hardening_constant_moment(getParam<RealVectorValue>("hardening_constant_moment")),
     _absolute_tolerance(parameters.get<Real>("absolute_tolerance")),
-    _relative_tolerance(parameters.get<Real>("relative_tolerance")),
     _plastic_deformation(declareProperty<RealVectorValue>("_plastic_deformation")),
     _plastic_deformation_old(getMaterialPropertyOld<RealVectorValue>("_plastic_deformation")),
     _plastic_rotation(declareProperty<RealVectorValue>("_plastic_rotation")),
@@ -91,11 +88,11 @@ IsotropicSpring::IsotropicSpring(const InputParameters & parameters)
     _hardening_variable_moment_old(getMaterialPropertyOld<RealVectorValue>("hardening_variable_moment")),
     _elastic_deformation(declareProperty<RealVectorValue>("elastic_deformation")),
     _elastic_rotation(declareProperty<RealVectorValue>("elastic_rotation")),
-    _max_its(1000)
+    _max_its(5000)
 {
   // Checking for consistency between length of the provided displacements and rotations vector
   if (_ndisp != _nrot)
-    mooseError("IsotropicSpring: The number of variables supplied in 'displacements' "
+    mooseError("KinematicSpring: The number of variables supplied in 'displacements' "
                "and 'rotations' input parameters must be equal.");
 
   // Fetch coupled variables and gradients (as stateful properties if necessary)
@@ -107,16 +104,10 @@ IsotropicSpring::IsotropicSpring(const InputParameters & parameters)
     MooseVariable * rot_variable = getVar("rotations", i);
     _rot_num[i] = rot_variable->number(); // Rotation variable numbers in MOOSE
   }
-
-  if (_hardening_constant_force.size() != 3)
-      mooseError("KinematicSpring3: The number of hardening constant for force must be three.");
-
-  if (_hardening_constant_moment.size() != 3)
-      mooseError("KinematicSpring3: The number of hardening constant for moment must be three.");
 }
 
 void
-IsotropicSpring::initQpStatefulProperties()
+KinematicSpring::initQpStatefulProperties()
 {
   _deformations[_qp].zero();
   _spring_forces_global[_qp].zero();
@@ -127,7 +118,7 @@ IsotropicSpring::initQpStatefulProperties()
 }
 
 void
-IsotropicSpring::computeQpProperties()
+KinematicSpring::computeQpProperties()
 {
   // Compute initial orientation and length of the spring in global coordinate system
   // Fetch the two nodes of the link element
@@ -145,7 +136,7 @@ IsotropicSpring::computeQpProperties()
 
   // Check if x and y orientations are perpendicular
   if (abs(dot) > 1e-4)
-    mooseError("Error in IsotropicSpring: y_orientation should be perpendicular to "
+    mooseError("Error in KinematicSpring: y_orientation should be perpendicular to "
                "the axis of the beam.");
 
   // Calculate z orientation in the global coordinate system as a cross product of the x and y
@@ -174,7 +165,7 @@ IsotropicSpring::computeQpProperties()
 }
 
 void
-IsotropicSpring::computeTotalRotation()
+KinematicSpring::computeTotalRotation()
 {
   _qp = 0;
 
@@ -187,7 +178,7 @@ IsotropicSpring::computeTotalRotation()
 }
 
 void
-IsotropicSpring::computeDeformations()
+KinematicSpring::computeDeformations()
 {
   // fetch the two end nodes for _current_elem
   std::vector<const Node *> node;
@@ -224,159 +215,154 @@ IsotropicSpring::computeDeformations()
 }
 
 void
-IsotropicSpring::computeForces()
+KinematicSpring::computeForces()
 {
-  for (unsigned int i = 0; i < 3; ++i)
-{
-///Calculate trial displacment
-Real deformation_increment = _deformations[_qp](i) - _deformations_old[_qp](i);
-  // std::cout<<" \n deformation increment " << deformation_increment;
+for (unsigned int i =0; i < _ndisp; i++)
+    {
+      ///Calculate trial displacment
+      Real deformation_increment = _deformations[_qp](i) - _deformations_old[_qp](i);
 
-if(i==0)
- _k = _kx[_qp];
-if(i==1)
-_k = _ky[_qp];
-if(i==2)
-_k = _kz[_qp];
+      if(i==0)
+      _k = _kx[_qp];
+      if(i==1)
+      _k = _ky[_qp];
+      if(i==2)
+      _k = _kz[_qp];
 
-///Calculate trial force
-Real trial_force = _spring_forces_global_old[_qp](i) + _k * deformation_increment;
+      ///Calculate trial force
+      Real trial_force = _spring_forces_global_old[_qp](i) + _k * deformation_increment;
 
-_hardening_variable[_qp](i) = _hardening_variable_old[_qp](i);
-_plastic_deformation[_qp](i) = _plastic_deformation_old[_qp](i);
+      _hardening_variable[_qp](i) = _hardening_variable_old[_qp](i);
+      _plastic_deformation[_qp](i) = _plastic_deformation_old[_qp](i);
 
-/// Calculate yield condition
-Real yield_condition = std::abs(trial_force) - _hardening_variable[_qp](i) - _yield_force(i);
+      ///Calculate effective trial force
+      Real effective_force = trial_force - _hardening_variable_old[_qp](i);
 
+      /// Calculate yield condition
+      Real yield_condition = std::abs(trial_force - _hardening_variable[_qp](i))  - _yield_force(i);
 
-Real iteration = 0;
-Real plastic_deformation_increment = 0.0;
+      Real iteration = 0;
+      Real plastic_deformation_increment = 0.0;
 
-/// Assume alldeformation as elastic deformation
-Real elastic_deformation_increment = deformation_increment;
+      /// Assume all deformation as elastic deformation
+      Real elastic_deformation_increment = deformation_increment;
 
-///Check yield condition i.e. if positive plastic deformation occurs else only elastic deformation
-if (yield_condition > 0.0)
-{
-  ///Calculate residual
-  Real residual = std::abs(trial_force) - _hardening_variable[_qp](i) - _yield_force(i) -
-                  _k * plastic_deformation_increment;
+      ///Check yield condition i.e. if positive plastic deformation occurs else only elastic deformation
+      if (yield_condition > 0.0)
+          {
+            ///Calculate residual
+            Real residual = std::abs(trial_force - _hardening_variable_old[_qp](i))-
+                  (_k + _hardening_constant_force(i)) * plastic_deformation_increment  - _yield_force(i);
 
-  Real reference_residual =
-      std::abs(trial_force) - _k * plastic_deformation_increment;
+            /// Determine the plastic deformation required to bring the trial force to yield surface
+            while (std::abs(residual) > _absolute_tolerance)
+              {
 
-  /// Determine the plastic deformation required to bring the trial force to yield surface
-  while (std::abs(residual) > _absolute_tolerance ||
-         std::abs(residual / reference_residual) > _relative_tolerance)
-  {
-    _hardening_variable[_qp](i) = computeHardeningValue(plastic_deformation_increment,i);
+                Real scalar = (std::abs(trial_force - _hardening_variable_old[_qp](i)) -
+                              (_k + _hardening_constant_force(i)) * plastic_deformation_increment  - _yield_force(i) ) /
+                              (_k + _hardening_constant_force(i));
+                plastic_deformation_increment += scalar;
+                residual = std::abs(trial_force - _hardening_variable_old[_qp](i))-
+                           (_k + _hardening_constant_force(i)) * plastic_deformation_increment  - _yield_force(i);
+                ++iteration;
+                if (iteration > _max_its) // not converging
+                throw MooseException("KinematicModel: Plasticity model did not converge");
+              }
+            plastic_deformation_increment *= MathUtils::sign(effective_force);
+            _hardening_variable[_qp](i) = computeHardeningValue(plastic_deformation_increment,i);
+            _plastic_deformation[_qp](i) += plastic_deformation_increment;
+            elastic_deformation_increment = deformation_increment - plastic_deformation_increment;
+           }
+      _elastic_deformation[_qp](i) = _deformations[_qp](i) - _plastic_deformation[_qp](i);
 
-    Real scalar = (std::abs(trial_force) - _hardening_variable[_qp](i) - _yield_force(i) -
-                   _k * plastic_deformation_increment) /
-                  (_k + _hardening_constant_force[i]);
-    plastic_deformation_increment += scalar;
-    residual = std::abs(trial_force) - _hardening_variable[_qp](i) - _yield_force(i) -
-               _k * plastic_deformation_increment;
-    reference_residual = std::abs(trial_force) - _k * plastic_deformation_increment;
+      /// Calculate the spring forces
+      _spring_forces_local(i) = _spring_forces_global_old[_qp](i) + _k * elastic_deformation_increment;
+    }
 
-    ++iteration;
-    if (iteration > _max_its) // not converging
-      throw MooseException("IsotropicSpring: Plasticity model did not converge");
-  }
-  plastic_deformation_increment *= MathUtils::sign(trial_force);
-  _plastic_deformation[_qp](i) += plastic_deformation_increment;
-  elastic_deformation_increment = deformation_increment - plastic_deformation_increment;
-}
-_elastic_deformation[_qp](i) = _deformations[_qp](i) - _plastic_deformation[_qp](i);
-
-_spring_forces_local(i) = _spring_forces_global_old[_qp](i) + _k * elastic_deformation_increment;
-
-}
 
   // convert local forces to global
   _spring_forces_global[_qp] =
       _total_global_to_local_rotation[_qp].transpose() * _spring_forces_local;
 
   // moments
-  for (unsigned int i = 0; i < 3; ++i)
-{
-Real rotation_increment = _rotations[_qp](i) - _rotations_old[_qp](i);
+  for (unsigned int i =0; i < 3; i++)
+      {
 
-if(i==0)
-_k = _krx[_qp];
-if(i==1)
-_k = _kry[_qp];
-if(i==2)
-_k = _krz[_qp];
+        /// Calculate rotation increment
+        Real rotation_increment = _rotations[_qp](i) - _rotations_old[_qp](i);
 
-Real trial_moment = _spring_moments_global_old[_qp](i) + _k * rotation_increment;
+        if(i==0)
+        _k = _krx[_qp];
+        if(i==1)
+        _k = _kry[_qp];
+        if(i==2)
+        _k = _krz[_qp];
 
-_hardening_variable_moment[_qp](i) = _hardening_variable_moment_old[_qp](i);
-_plastic_rotation[_qp](i) = _plastic_rotation_old[_qp](i);
 
-Real yield_condition = std::abs(trial_moment) - _hardening_variable_moment[_qp](i) - _yield_moments(i);
+        Real trial_moment = _spring_moments_global_old[_qp](i) + _k * rotation_increment;
 
-Real iteration = 0;
-Real plastic_rotation_increment = 0.0;
-Real elastic_rotation_increment = rotation_increment;
+        _hardening_variable_moment[_qp](i) = _hardening_variable_moment_old[_qp](i);
+        _plastic_rotation[_qp](i) = _plastic_rotation_old[_qp](i);
 
-if (yield_condition > 0.0)
-{
-  Real residual = std::abs(trial_moment) - _hardening_variable_moment[_qp](i) - _yield_moments(i) -
-                  _k * plastic_rotation_increment;
+        Real effective_moment = trial_moment - _hardening_variable_moment_old[_qp](i);
 
-  Real reference_residual =
-      std::abs(trial_moment) - _k * plastic_rotation_increment;
+        Real yield_condition = std::abs(trial_moment - _hardening_variable_moment[_qp](i))  - _yield_moments(i);
 
-  while (std::abs(residual) > _absolute_tolerance ||
-         std::abs(residual / reference_residual) > _relative_tolerance)
-  {
-    _hardening_variable_moment[_qp](i) = computeHardeningMomentValue(plastic_rotation_increment,i);
+        Real iteration = 0;
+        Real plastic_rotation_increment = 0.0;
+        Real elastic_rotation_increment = rotation_increment;
 
-    Real scalar = (std::abs(trial_moment) - _hardening_variable_moment[_qp](i) - _yield_moments(i) -
-                   _k * plastic_rotation_increment) /
-                  ( _k + _hardening_constant_moment[i]);
-    plastic_rotation_increment += scalar;
 
-    residual = std::abs(trial_moment) - _hardening_variable_moment[_qp](i) - _yield_moments(i) -
-               _k * plastic_rotation_increment;
+        if (yield_condition > 0.0)
+            {
+              Real residual = std::abs(trial_moment - _hardening_variable_moment_old[_qp](i))-
+                    (_k + _hardening_constant_moment(i)) * plastic_rotation_increment  - _yield_moments(i);
 
-    reference_residual = std::abs(trial_moment) - _k * plastic_rotation_increment;
+              while (std::abs(residual) > _absolute_tolerance)
+                {
 
-    ++iteration;
-    if (iteration > _max_its) // not converging
-      throw MooseException("IsotropicSpring: Plasticity model did not converge");
-  }
-  plastic_rotation_increment *= MathUtils::sign(trial_moment);
-  _plastic_rotation[_qp](i) += plastic_rotation_increment;
-  elastic_rotation_increment = rotation_increment - plastic_rotation_increment;
-}
-_elastic_rotation[_qp](i) = _rotations[_qp](i) - _plastic_rotation[_qp](i);
+                  Real scalar = (std::abs(trial_moment - _hardening_variable_moment_old[_qp](i)) -
+                                (_k + _hardening_constant_moment(i)) * plastic_rotation_increment  - _yield_moments(i) ) /
+                                (_k + _hardening_constant_moment(i));
+                  plastic_rotation_increment += scalar;
+                  residual = std::abs(trial_moment - _hardening_variable_moment_old[_qp](i))-
+                             (_k + _hardening_constant_moment(i)) * plastic_rotation_increment  - _yield_moments(i);
+                  ++iteration;
+                  if (iteration > _max_its) // if not converging
+                  throw MooseException("KinematicModel: Plasticity model did not converge");
+                }
+              plastic_rotation_increment *= MathUtils::sign(effective_moment);
+              _hardening_variable_moment[_qp](i) = computeHardeningMomentValue(plastic_rotation_increment,i);
+              _plastic_rotation[_qp](i) += plastic_rotation_increment;
+              elastic_rotation_increment = rotation_increment - plastic_rotation_increment;
+             }
+        _elastic_rotation[_qp](i) = _rotations[_qp](i) - _plastic_rotation[_qp](i);
 
-_spring_moments_local(i) = _spring_moments_global_old[_qp](i) + _k * elastic_rotation_increment;
-}
+        _spring_moments_local(i) = _spring_moments_global_old[_qp](i) + _k * elastic_rotation_increment;
+      }
+
   // convert local moments to global
   _spring_moments_global[_qp] =
       _total_global_to_local_rotation[_qp].transpose() * _spring_moments_local;
 }
 
 Real
-IsotropicSpring::computeHardeningValue(Real scalar, Real j)
+KinematicSpring::computeHardeningValue(Real scalar, Real j)
 {
-
-  return _hardening_variable_old[_qp](j) + _hardening_constant_force[j] * scalar;
+  return _hardening_variable_old[_qp](j) + _hardening_constant_force(j) * scalar;
 }
 
 Real
-IsotropicSpring::computeHardeningMomentValue(Real scalar, Real j)
+KinematicSpring::computeHardeningMomentValue(Real scalar, Real j)
 {
-
-  return _hardening_variable_moment_old[_qp](j) + _hardening_constant_moment[j] * scalar;
+  return _hardening_variable_moment_old[_qp](j) + _hardening_constant_moment(j) * scalar;
 }
 
 
+
+
 void
-IsotropicSpring::computeStiffnessMatrix()
+KinematicSpring::computeStiffnessMatrix()
 {
   // The stiffness matrix is of the form
   // |  kdd  kdr  |

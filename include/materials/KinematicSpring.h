@@ -16,21 +16,20 @@
 #pragma once
 
 
-
 // Forward Declarations
-class IsotropicSpring;
+class KinematicSpring;
 
 template <>
-InputParameters validParams<IsotropicSpring>();
+InputParameters validParams<KinematicSpring>();
 
 /**
- * IsotropicSpring material simulates a plastic spring with linear isotropic hardening
+ * KinematicSpring material simulates a plastic spring with linear kinematic hardening
  */
-class IsotropicSpring : public Material
+class KinematicSpring : public Material
 {
 public:
 
-  IsotropicSpring(const InputParameters & parameters);
+  KinematicSpring(const InputParameters & parameters);
 
 protected:
   virtual void initQpStatefulProperties() ;
@@ -53,7 +52,7 @@ protected:
   /// global coordinate system
   void computeStiffnessMatrix();
 
-  /// Computes the hardening variable
+  /// Computes the linear hardening variable based on Prager rule
   virtual Real computeHardeningValue(Real scalar, Real j);
   virtual Real computeHardeningMomentValue(Real scalar, Real j);
 
@@ -69,16 +68,16 @@ protected:
   /// Variable numbers corresponding to the displacement variables
   std::vector<unsigned int> _disp_num;
 
-  /// Deformations in the spring calculated at the current and previous time in the spring local coordinates
+  /// Deformations in the spring calculated at the currrent and previous time step in the spring local coordinates
   MaterialProperty<RealVectorValue> & _deformations;
   const MaterialProperty<RealVectorValue> & _deformations_old;
 
-  /// Rotations in the spring calculated at current and previous time in the spring local coordinates
+  /// Rotations in the spring calculated at current and previous timestep in the spring local coordinates
   MaterialProperty<RealVectorValue> & _rotations;
   const MaterialProperty<RealVectorValue> & _rotations_old;
 
   /// Axial stiffness of the spring (local x direction)
-   const VariableValue & _kx;
+  const VariableValue & _kx;
 
   /// Shear stiffness of the spring in local y direction
   const VariableValue & _ky;
@@ -131,11 +130,11 @@ protected:
   /// Spring rotational stiffness matrix in the local coordinate system
   RankTwoTensor _krr_local;
 
-  /// Spring forces in the global coordinate system at current and previous time
+  /// Spring forces in the global coordinate system at current and previous timestep
   MaterialProperty<RealVectorValue> & _spring_forces_global;
   const MaterialProperty<RealVectorValue> & _spring_forces_global_old;
 
-  /// Spring moments in the global coordinate system at current and previous time
+  /// Spring moments in the global coordinate system at current and previous timestep
   MaterialProperty<RealVectorValue> & _spring_moments_global;
   const MaterialProperty<RealVectorValue> & _spring_moments_global_old;
 
@@ -153,37 +152,38 @@ protected:
 
 
 
-  ///  yield and hardening property input
-  RealVectorValue _yield_force;
-  RealVectorValue _yield_moments;
-  std::vector<Real> _hardening_constant_force;
-  std::vector<Real> _hardening_constant_moment;
+ //  yield and hardening property input
+ RealVectorValue _yield_force;
+ RealVectorValue _yield_moments;
+ const RealVectorValue & _hardening_constant_force;
+ const RealVectorValue & _hardening_constant_moment;
 
 
-  /// convergence tolerance
-  Real _absolute_tolerance;
-  Real _relative_tolerance;
+ /// convergence tolerance
+ Real _absolute_tolerance;
 
-  /// Variable to store stiffness during iteration
-  Real _k;
+ /// Variable to store stiffness during iteration
+ Real _k;
 
-  /// Plastic displacements and rotation at current and previous time step
-  MaterialProperty<RealVectorValue> & _plastic_deformation;
-  const MaterialProperty<RealVectorValue> & _plastic_deformation_old;
-  MaterialProperty<RealVectorValue> & _plastic_rotation;
-  const MaterialProperty<RealVectorValue> & _plastic_rotation_old;
+ /// Plastic displacements and rotation at current and previous time step
+ MaterialProperty<RealVectorValue> & _plastic_deformation;
+ const MaterialProperty<RealVectorValue> & _plastic_deformation_old;
+ MaterialProperty<RealVectorValue> & _plastic_rotation;
+ const MaterialProperty<RealVectorValue> & _plastic_rotation_old;
 
-  /// Hardening variables at current and previous time step
-  MaterialProperty<RealVectorValue> & _hardening_variable;
-  const MaterialProperty<RealVectorValue> & _hardening_variable_old;
-  MaterialProperty<RealVectorValue> & _hardening_variable_moment;
-  const MaterialProperty<RealVectorValue> & _hardening_variable_moment_old;
+/// Hardening variables at current and previous time step
+ MaterialProperty<RealVectorValue> & _hardening_variable;
+ const MaterialProperty<RealVectorValue> & _hardening_variable_old;
+ MaterialProperty<RealVectorValue> & _hardening_variable_moment;
+ const MaterialProperty<RealVectorValue> & _hardening_variable_moment_old;
 
-  /// Elastic displacements and rotation at current and previous time step
-  MaterialProperty<RealVectorValue> & _elastic_deformation;
-  MaterialProperty<RealVectorValue> & _elastic_rotation;
 
-  /// maximum no. of iterations
-  const unsigned int _max_its;
+/// Elastic displacements and rotation at current and previous time step
+ MaterialProperty<RealVectorValue> & _elastic_deformation;
+ MaterialProperty<RealVectorValue> & _elastic_rotation;
+
+
+ /// maximum no. of iterations
+ const unsigned int _max_its;
 
 };
